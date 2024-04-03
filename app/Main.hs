@@ -2,15 +2,20 @@
 
 module Main (main) where
 
-import Prelude hiding (getLine)
-
 import Data.Text.IO (getLine)
-
-import Lang (simp)
+import Lang (prepare, simp)
 import Parsers (lang)
-import Text.Megaparsec (parse)
+import Text.Megaparsec (errorBundlePretty, parse)
+import Prelude hiding (getLine)
+import Logging (writeLog)
 
 main :: IO ()
 main = do
     line <- getLine
-    either (const $ return ()) (print . simp) $ parse lang "<stdin>" line
+    case parse lang "<stdin>" line of
+        Left e -> putStrLn ">:(" >> putStr (errorBundlePretty e)
+        Right ex -> do
+            print ex
+            ex' <- writeLog $ simp ex
+            ex'' <- writeLog $ simp $ prepare ex'
+            print ex''

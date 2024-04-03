@@ -1,16 +1,36 @@
-module Lang (Name, Expr (Ap, Lam, Var), expr, alpha, subst, beta, eta, simp) where
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ViewPatterns #-}
 
-import Data.Text (Text, unpack)
+module Lang (Name, Expr (Ap, Lam, Var), expr, subst, simp, frees, prepare) where
 
+import Control.Spoon (spoon)
+import Data.List (nub, sortOn)
+import Data.String (IsString (fromString))
+import Data.Text (Text, append, isSuffixOf, pack, unpack)
+import Logging
+import Prelude hiding (log)
+
+type Log = Logged String
 type Name = Text
 data Expr = Ap Expr Expr | Lam Name Expr | Var Name
 
+infixr 9 `Lam`
+infixl 9 `Ap`
+
+wrap :: String -> String
+wrap = ("(" ++) . (++ ")")
+
 instance Show Expr where
-    show =
-        expr
-            (\a b -> a ++ " " ++ b)
-            (\x e -> "\\" ++ unpack x ++ ", (" ++ e ++ ")")
-            unpack
+    show (Var n) = unpack n
+    show (Lam n e) = wrap $ "\\" ++ unpack n ++ ", " ++ show e
+    show (Ap a b@(Ap _ _)) = show a ++ " " ++ wrap (show b)
+    show (Ap a b) = show a ++ " " ++ show b
+
+instance IsString Expr where
+    fromString = Var . pack
+
+indent :: String -> String
+indent = ('\t' :)
 
 -- | A function to help with processing 'Expr's
 expr :: (b -> b -> b) -> (Name -> b -> b) -> (Name -> b) -> Expr -> b
@@ -20,49 +40,103 @@ expr ap lam var = rec
     rec (Lam n e) = lam n (rec e)
     rec (Var n) = var n
 
-{- | α-conversion, sorta
+rescheme :: (Name -> Name) -> Expr -> Expr
+rescheme rn = expr Ap (\n e -> let n' = rn n in Lam n' $ forget $ subst n (Var n') e) Var
 
-it is *very* important for the renamer to be injective
--}
-alpha :: (Name -> Name) -> Expr -> Expr
-alpha rn = expr Ap (Lam . rn) (Var . rn)
+
+takes :: Int -> [a] -> [[a]]
+takes 0 _ = [[]]
+takes n as = do
+    a <- as
+    l <- takes (n - 1) as
+    return (a : l)
+
+suffixes :: [Name]
+suffixes =
+    pack <$> do
+        n <- [1 ..]
+        sortOn (length . nub) $ takes n "_-'"
+
+safeSuffix :: [Name] -> Name
+safeSuffix lst = head $ dropWhile (\suf -> any (isSuffixOf suf) lst) suffixes
+postpend :: Name -> Name -> Name
+postpend suf n = append n suf
 
 -- | Substitution
-subst :: Name -> Expr -> Expr -> Expr
-subst n v (Lam x e)
-    | x == n = Lam x e
-    | otherwise = Lam x (subst n v e)
-subst n v (Ap f x) = Ap (subst n v f) (subst n v x)
+subst :: Name -> Expr -> Expr -> Log Expr
+subst n v l@(Lam x e)
+    | x == n = l <$ log ("stopped at " ++ show l)
+    | elem x (frees v) =
+        let suf = safeSuffix (frees v)
+         in subst n v (rescheme (postpend suf) l)
+    | otherwise = do
+        log ("descended into " ++ show l)
+        res <- region indent $ Lam x <$> (subst n v e)
+        log ("resulted in " ++ show res)
+        return res
+subst n v a@(Ap f x) = do
+    log ("recursing into " ++ show a)
+    log ("first, " ++ show f)
+    f' <- region indent $ subst n v f
+    log ("second, " ++ show x)
+    x' <- region indent $ subst n v x
+    let a' = Ap f' x'
+    log ("result: " ++ show a')
+    return a'
 subst n v (Var x)
-    | x == n = v
-    | otherwise = Var x
-
--- | β-reduces
-beta :: Expr -> Expr
-beta (Ap (Lam n e) x) = beta $ subst n x e
-beta (Ap f x) = Ap (beta f) (beta x)
-beta (Lam n e) = Lam n (beta e)
-beta (Var n) = Var n
+    | x == n = v <$ log ("replaced var [" ++ unpack n ++ "] with val " ++ show v)
+    | otherwise = Var x <$ log ("ignored var [" ++ unpack x ++ "]")
 
 -- | checks if a name occurs free in an expression
 free :: Name -> Expr -> Bool
-free n = expr (||) (\m -> if n == m then const False else id) (== n)
-
--- | η-reduces
-eta :: Expr -> Expr
-eta (Lam n (Ap f (Var m)))
-    | n == m && not (free n f) = eta f
-eta (Lam x e) = Lam x (eta e)
-eta (Ap f x) = Ap (eta f) (eta x)
-eta (Var n) = Var n
+free n = expr (||) (\m b -> if n == m then False else b) (== n)
 
 -- | Combined η & β reduction
-simp, once :: Expr -> Expr
-once (Ap (Lam n e) x) = simp $ subst n x e
+simp, once :: Expr -> Log Expr
+once ex@(Ap (Lam n e) x) = do
+    log $ "found β-reduction at " ++ show ex
+    res <- region indent $ subst n x e
+    log $ "β-reduced to " ++ show res
+    simp res
 once (Lam n (Ap f (Var m))) | n == m && not (free n f) = simp f
-once x = x
-simp (Ap (Lam n e) x) = simp $ subst n x e
+once x = x <$ log "done simplifying"
+simp ex@(Ap (Lam n e) x) = do
+    log $ "found β-reduction at " ++ show ex
+    res <- region indent $ subst n x e
+    log $ "β-reduced to " ++ show res
+    simp res
 simp (Lam n (Ap f (Var m))) | n == m && not (free n f) = simp f
-simp (Ap f x) = once $ Ap (simp f) (simp x)
-simp (Lam n x) = once $ Lam n (simp x)
-simp (Var n) = once $ Var n
+simp (Ap f x) = do
+    log $ "recursing into " ++ show f
+    f' <- region indent $ simp f
+    log $ "recursing into " ++ show x
+    x' <- region indent $ simp x
+    log $ "result of ap:" ++ show (Ap f x)
+    once (Ap f' x')
+simp l@(Lam n x) = do
+    log $ "recursing into " ++ show l
+    x' <- region indent $ simp x
+    let l' = Lam n x'
+    log $ "result: " ++ show l'
+    once l'
+simp (Var n) = Var n <$ log "ignored variable"
+
+-- | List of free variables
+frees :: Expr -> [Name]
+frees = expr (++) (filter . (/=)) (: [])
+
+lambdize :: Integer -> Expr
+lambdize = Lam "s" . Lam "z" . helper
+  where
+    helper 0 = Var "z"
+    helper n = Ap (Var "s") (helper (n - 1))
+
+preps :: Name -> [Expr -> Expr]
+preps n@(spoon . (read :: String -> Integer) . unpack -> Just k) = [forget . subst n (lambdize k)]
+preps "+" = [forget . (subst "+" $ "a" `Lam` "b" `Lam` "s" `Lam` "z" `Lam` ("a" `Ap` "s" `Ap` ("b" `Ap` "s" `Ap` "z")))]
+preps "*" = [forget . (subst "*" $ "a" `Lam` "b" `Lam` "s" `Lam` ("a" `Ap` ("b" `Ap` "s")))]
+preps "^" = [forget . (subst "^" $ "a" `Lam` "b" `Lam` "s" `Lam` "z" `Lam` ("b" `Ap` "a" `Ap` "s" `Ap` "z"))]
+preps _ = []
+
+prepare :: Expr -> Expr
+prepare ex = foldr id ex (frees ex >>= preps)

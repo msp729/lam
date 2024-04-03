@@ -52,6 +52,7 @@ executables:
     - lam
     - text
     - megaparsec
+    - spoon
 
 tests:
   lam-test:
