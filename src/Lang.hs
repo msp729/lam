@@ -8,6 +8,7 @@ import Data.List (nub, sortOn)
 import Data.String (IsString (fromString))
 import Data.Text (Text, append, isSuffixOf, pack, unpack)
 import Logging
+import Numeric.Natural (Natural)
 import Prelude hiding (log)
 
 type Log = Logged String
@@ -20,7 +21,17 @@ infixl 9 `Ap`
 wrap :: String -> String
 wrap = ("(" ++) . (++ ")")
 
+toNat :: Expr -> Maybe Natural
+toNat (s `Lam` z `Lam` n) = tryNat n
+  where
+    tryNat :: Expr -> Maybe Natural
+    tryNat (Var s' `Ap` x) | s' == s = (1 +) <$> tryNat x
+    tryNat (Var z') | z' == z = Just 0
+    tryNat _ = Nothing
+toNat _ = Nothing
+
 instance Show Expr where
+    show (toNat -> Just n) = show n
     show (Var n) = unpack n
     show (Lam n e) = wrap $ "\\" ++ unpack n ++ ", " ++ show e
     show (Ap a b@(Ap _ _)) = show a ++ " " ++ wrap (show b)
@@ -42,7 +53,6 @@ expr ap lam var = rec
 
 rescheme :: (Name -> Name) -> Expr -> Expr
 rescheme rn = expr Ap (\n e -> let n' = rn n in Lam n' $ forget $ subst n (Var n') e) Var
-
 
 takes :: Int -> [a] -> [[a]]
 takes 0 _ = [[]]

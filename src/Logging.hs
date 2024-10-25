@@ -1,10 +1,12 @@
-module Logging (Logged, log, region, writeLog, forget) where
+module Logging (Logged, check, log, region, writeLog, forget) where
 
-import Prelude hiding (log, lines)
+import Prelude hiding (lines, log)
 
+-- | @Logged s a@ is isomorphic to @([s], a)@
 data Logged s a = Log {ls :: [s], v :: a}
 
 instance Functor (Logged s) where fmap f l = l{v = f (v l)}
+
 instance Applicative (Logged s) where
     pure = Log []
     liftA2 f (Log l1 v1) (Log l2 v2) = Log (l2 ++ l1) (f v1 v2)
@@ -26,3 +28,9 @@ writeLog (Log lines val) = do
 
 forget :: Logged s a -> a
 forget = v
+
+check :: Logged s a -> Logged s [s]
+check l = l{v = ls l}
+
+read :: Logged s a -> [s]
+read = forget . check

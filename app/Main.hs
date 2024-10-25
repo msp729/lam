@@ -12,14 +12,21 @@ import Prelude
 
 main :: IO ()
 main = do
-    putStrLn "Please provide a lambda-calculus expression:"
-    line <- T.getLine
-    putStrLn "And would you like debug output? (1 for yes, anything else for no)"
+    putStrLn "Would you like debug output? (1 for yes, anything else for no)"
     putStrLn "Be warned, it is long and (mostly) useless"
     dbg <- getLine
-    case parse lang "<stdin>" line of
-        Left e -> putStrLn ">:(" >> putStr (errorBundlePretty e)
-        Right ex ->
-            if spoon (read dbg :: Integer) == Just 1
-                then print =<< (writeLog $ simp =<< prepare <$> simp ex)
-                else print $ forget $ simp =<< prepare <$> simp ex
+    interp (spoon (read dbg :: Integer) == Just 1)
+
+interp :: Bool -> IO ()
+interp b = do
+    putStrLn "Please provide a λ-calculus expression:"
+    line <- T.getLine
+    if line == ":q" then return () else
+        if line == "" then interp b else do
+            case parse lang "<stdin>" line of
+                Left e -> putStrLn "invalid" >> putStr (errorBundlePretty e)
+                Right ex ->
+                    if b
+                        then print =<< (writeLog $ simp =<< prepare <$> simp ex)
+                        else print $ forget $ simp =<< prepare <$> simp ex
+            interp b

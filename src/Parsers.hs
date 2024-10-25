@@ -49,10 +49,7 @@ lang = do
         space1 <|> () <$ (char ',' <|> char '.')
         sp
         return n
-    vals <- many $ flip (<|>) (paren lang <* sp) $ try $ do
-        n <- var
-        sp
-        return $ Var n
+    vals <- many $ flip (<|>) (paren lang <* sp) $ try $ Var <$> var <* sp
     let lams = Lam <$> args
     let clam = foldl (.) id lams
     let app = foldl1 Ap vals
