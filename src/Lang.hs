@@ -146,6 +146,12 @@ preps n@(spoon . (read :: String -> Integer) . unpack -> Just k) = [forget . sub
 preps "+" = [forget . (subst "+" $ "a" `Lam` "b" `Lam` "s" `Lam` "z" `Lam` ("a" `Ap` "s" `Ap` ("b" `Ap` "s" `Ap` "z")))]
 preps "*" = [forget . (subst "*" $ "a" `Lam` "b" `Lam` "s" `Lam` ("a" `Ap` ("b" `Ap` "s")))]
 preps "^" = [forget . (subst "^" $ "a" `Lam` "b" `Lam` "s" `Lam` "z" `Lam` ("b" `Ap` "a" `Ap` "s" `Ap` "z"))]
+preps "S" = [forget . (subst "S" $ "a" `Lam` "b" `Lam` "c" `Lam` ("a" `Ap` "c" `Ap` Ap "b" "c"))]
+preps "K" = [forget . (subst "K" $ "a" `Lam` "b" `Lam` "a")]
+preps "I" = [forget . (subst "I" $ "a" `Lam` "a")]
+preps "C" = [forget . (subst "C" $ "a" `Lam` "b" `Lam` "c" `Lam` ("a" `Ap` "c" `Ap` "b"))]
+preps "W" = [forget . (subst "W" $ "a" `Lam` "b" `Lam` ("a" `Ap` "b" `Ap` "b"))]
+preps "B" = [forget . (subst "B" $ "a" `Lam` "b" `Lam` "c" `Lam` ("a" `Ap` Ap "b" "c"))]
 preps _ = []
 
 prepare :: Expr -> Expr

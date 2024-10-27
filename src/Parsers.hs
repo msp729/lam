@@ -1,12 +1,12 @@
 module Parsers (lex, var, lam, ap, lang) where
 
-import Control.Applicative (asum, many, some)
+import Control.Applicative (many)
 import Data.Text (Text)
 import Data.Void
 import Lang
 import Text.Megaparsec hiding (many, some)
 import Text.Megaparsec.Char (char, space1)
-import Text.Megaparsec.Char.Lexer (lexeme, space)
+import Text.Megaparsec.Char.Lexer (space)
 import Prelude hiding (lex)
 
 type Parser = Parsec Void Text
