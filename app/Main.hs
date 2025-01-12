@@ -3,7 +3,7 @@
 module Main (main) where
 
 import Control.Spoon (spoon)
-import qualified Data.Text.IO as T
+import Data.Text.IO qualified as T
 import Lang (prepare, simp)
 import Logging (forget, writeLog)
 import Parsers (lang)
@@ -21,12 +21,18 @@ interp :: Bool -> IO ()
 interp b = do
     putStrLn "Please provide a λ-calculus expression:"
     line <- T.getLine
-    if line == ":q" then return () else
-        if line == "" then interp b else do
-            case parse lang "<stdin>" line of
-                Left e -> putStrLn "invalid" >> putStr (errorBundlePretty e)
-                Right ex ->
-                    if b
-                        then print =<< (writeLog $ simp =<< prepare <$> simp ex)
-                        else print $ forget $ simp =<< prepare <$> simp ex
-            interp b
+    if line == ":q"
+        then return ()
+        else
+            if line == ""
+                then interp b
+                else do
+                    case parse lang "<stdin>" line of
+                        Left e -> putStrLn "invalid" >> putStr (errorBundlePretty e)
+                        Right ex ->
+                            if b
+                                then
+                                    print
+                                        =<< (writeLog $ simp =<< prepare <$> simp ex)
+                                else print $ forget $ simp =<< prepare <$> simp ex
+                    interp b

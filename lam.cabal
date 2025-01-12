@@ -59,7 +59,7 @@ library
     import:           warnings
 
     -- Modules exported by the library.
-    exposed-modules:  Lang, Lib, Logging, Parsers
+    exposed-modules:  Lang, Logging, Parsers
 
     -- Modules included in this library but not exported.
     -- other-modules:
@@ -68,7 +68,7 @@ library
     -- other-extensions:
 
     -- Other library packages from which modules are imported.
-    build-depends:    base ^>=4.21.0.0, text, spoon, megaparsec
+    build-depends:    base, text, spoon, megaparsec
 
     -- Directories containing source files.
     hs-source-dirs:   src
@@ -91,11 +91,12 @@ executable lam
 
     -- Other library packages from which modules are imported.
     build-depends:
-        base ^>=4.21.0.0,
+        base,
         lam,
         spoon,
         text,
-        megaparsec
+        megaparsec,
+        haskeline
 
     -- Directories containing source files.
     hs-source-dirs:   app
@@ -127,5 +128,5 @@ test-suite lam-test
 
     -- Test dependencies.
     build-depends:
-        base ^>=4.21.0.0,
+        base,
         lam
