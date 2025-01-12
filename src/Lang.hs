@@ -11,9 +11,14 @@ import Logging
 import Numeric.Natural (Natural)
 import Prelude hiding (log)
 
-type Log = Logged String
+type Log = Logged Level String
 type Name = Text
 data Expr = Ap Expr Expr | Lam Name Expr | Var Name
+
+logH, logL, log'' :: String -> Log ()
+logH = logAt High
+logL = logAt Low
+log'' = logFrom Low
 
 infixr 9 `Lam`
 infixl 9 `Ap`
@@ -75,27 +80,29 @@ postpend suf n = append n suf
 -- | Substitution
 subst :: Name -> Expr -> Expr -> Log Expr
 subst n v l@(Lam x e)
-    | x == n = l <$ log ("stopped at " ++ show l)
+    | x == n = l <$ logH ("stopped at " ++ show l)
     | elem x (frees v) =
         let suf = safeSuffix (frees v)
          in subst n v (rescheme (postpend suf) l)
     | otherwise = do
-        log ("descended into " ++ show l)
+        logH ("descended into " ++ show l)
         res <- region indent $ Lam x <$> (subst n v e)
-        log ("resulted in " ++ show res)
+        logH ("resulted in " ++ show res)
+        logL $ show res
         return res
 subst n v a@(Ap f x) = do
-    log ("recursing into " ++ show a)
-    log ("first, " ++ show f)
+    logH ("recursing into " ++ show a)
+    logH ("first, " ++ show f)
     f' <- region indent $ subst n v f
-    log ("second, " ++ show x)
+    logH ("second, " ++ show x)
     x' <- region indent $ subst n v x
     let a' = Ap f' x'
-    log ("result: " ++ show a')
+    logH ("result: " ++ show a')
+    logL $ show a'
     return a'
 subst n v (Var x)
-    | x == n = v <$ log ("replaced var [" ++ unpack n ++ "] with val " ++ show v)
-    | otherwise = Var x <$ log ("ignored var [" ++ unpack x ++ "]")
+    | x == n = v <$ (logH ("replaced var " ++ unpack n ++ " with val " ++ show v) >> logL (show v))
+    | otherwise = Var x <$ (logH ("ignored var " ++ unpack x) >> logL (show (Var x)))
 
 -- | checks if a name occurs free in an expression
 free :: Name -> Expr -> Bool
@@ -104,32 +111,37 @@ free n = expr (||) (\m b -> if n == m then False else b) (== n)
 -- | Combined η & β reduction
 simp, once :: Expr -> Log Expr
 once ex@(Ap (Lam n e) x) = do
-    log $ "found β-reduction at " ++ show ex
+    logH $ "found β-reduction at " ++ show ex
     res <- region indent $ subst n x e
-    log $ "β-reduced to " ++ show res
+    logH $ "β-reduced to " ++ show res
+    logL $ show res
     simp res
 once (Lam n (Ap f (Var m))) | n == m && not (free n f) = simp f
-once x = x <$ log "done simplifying"
+once x = x <$ logH "done simplifying"
 simp ex@(Ap (Lam n e) x) = do
-    log $ "found β-reduction at " ++ show ex
+    logH $ "found β-reduction at " ++ show ex
     res <- region indent $ subst n x e
-    log $ "β-reduced to " ++ show res
+    logH $ "β-reduced to " ++ show res
+    logL $ show res
     simp res
 simp (Lam n (Ap f (Var m))) | n == m && not (free n f) = simp f
 simp (Ap f x) = do
-    log $ "recursing into " ++ show f
+    logH $ "recursing into " ++ show f
     f' <- region indent $ simp f
-    log $ "recursing into " ++ show x
+    logH $ "recursing into " ++ show x
     x' <- region indent $ simp x
-    log $ "result of ap:" ++ show (Ap f x)
+    let res = Ap f' x'
+    logH $ "result of ap:" ++ show res
+    logL $ show res
     once (Ap f' x')
 simp l@(Lam n x) = do
-    log $ "recursing into " ++ show l
+    logH $ "recursing into " ++ show l
     x' <- region indent $ simp x
     let l' = Lam n x'
-    log $ "result: " ++ show l'
+    logH $ "result: " ++ show l'
+    logL $ show l'
     once l'
-simp (Var n) = Var n <$ log "ignored variable"
+simp (Var n) = Var n <$ log'' "ignored variable"
 
 -- | List of free variables
 frees :: Expr -> [Name]
@@ -152,7 +164,21 @@ preps "I" = [forget . (subst "I" $ "a" `Lam` "a")]
 preps "C" = [forget . (subst "C" $ "a" `Lam` "b" `Lam` "c" `Lam` ("a" `Ap` "c" `Ap` "b"))]
 preps "W" = [forget . (subst "W" $ "a" `Lam` "b" `Lam` ("a" `Ap` "b" `Ap` "b"))]
 preps "B" = [forget . (subst "B" $ "a" `Lam` "b" `Lam` "c" `Lam` ("a" `Ap` Ap "b" "c"))]
+preps "F" =
+    [ forget
+        . ( subst "F" $
+                "m"
+                    `Lam` ( "m"
+                                `Ap` ("f" `Lam` "n" `Lam` ("n" `Ap` "f" `Ap` "n"))
+                                `Ap` ("n" `Lam` "s" `Lam` "z" `Lam` Ap "s" ("n" `Ap` "s" `Ap` "z"))
+                          )
+          )
+    ]
 preps _ = []
+
+{-
+ - f = \m, m (\f, \n, n f n) (\n, \s, \z, s(nsz))
+ -}
 
 prepare :: Expr -> Expr
 prepare ex = foldr id ex (frees ex >>= preps)

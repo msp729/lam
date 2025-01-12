@@ -1,9 +1,10 @@
-module Parsers (lex, var, lam, ap, lang) where
+module Parsers (lex, var, lam, ap, lang, level) where
 
 import Control.Applicative (many)
 import Data.Text (Text)
 import Data.Void
 import Lang
+import Logging
 import Text.Megaparsec hiding (many, some)
 import Text.Megaparsec.Char (char, space1)
 import Text.Megaparsec.Char.Lexer (space)
@@ -54,3 +55,8 @@ lang = do
     let clam = foldl (.) id lams
     let app = foldl1 Ap vals
     return $ clam app
+
+level :: String -> Level
+level "2" = High
+level "1" = Low
+level _ = Zero
