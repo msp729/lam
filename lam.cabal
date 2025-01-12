@@ -96,7 +96,8 @@ executable lam
         spoon,
         text,
         megaparsec,
-        haskeline
+        haskeline,
+        transformers
 
     -- Directories containing source files.
     hs-source-dirs:   app
